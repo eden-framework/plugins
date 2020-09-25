@@ -1,13 +1,15 @@
 package plugins
 
 type FileTemplate struct {
-	FileName string
-	Tpl      string
+	PackageName  string
+	FileFullName string
+	Tpl          string
 }
 
-func NewFileTemplate(name string) *FileTemplate {
+func NewFileTemplate(pkgName, fullName string) *FileTemplate {
 	return &FileTemplate{
-		FileName: name,
+		PackageName:  pkgName,
+		FileFullName: fullName,
 	}
 }
 
