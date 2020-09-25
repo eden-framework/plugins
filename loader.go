@@ -6,9 +6,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"plugin"
-	"strings"
 )
 
 type Loader struct {
@@ -26,8 +26,6 @@ func NewLoader(projectCwd string) *Loader {
 func (l *Loader) Load(name, zipUrl string) (*plugin.Plugin, error) {
 	fmt.Printf("Start download plugin: %s\n", name)
 	fmt.Printf("plugin zip url: %s\n", zipUrl)
-
-	defer fmt.Printf("\nDownload finished.\n")
 
 	resp, err := http.Get(zipUrl)
 	if err != nil {
@@ -49,44 +47,26 @@ func (l *Loader) Load(name, zipUrl string) (*plugin.Plugin, error) {
 		return nil, err
 	}
 	w.Close()
+	fmt.Printf("\nDownload finished.\n")
 
-	r, err := zip.OpenReader(zipFile)
+	fmt.Println("Decompressing zip...")
+	rootPath, err := l.Decompress(zipFile, l.cwd)
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
 
-	var pluginFile string
-	for _, f := range r.File {
-		if strings.HasSuffix(f.Name, ".so") && !f.FileInfo().IsDir() {
-			reader, err := f.Open()
-			if err != nil {
-				return nil, err
-			}
-
-			pluginFile = path.Join(l.cwd, f.FileInfo().Name())
-			file, err := os.Create(pluginFile)
-			if err != nil {
-				reader.Close()
-				return nil, err
-			}
-			l.fileList = append(l.fileList, file)
-
-			_, err = io.Copy(file, reader)
-			if err != nil {
-				reader.Close()
-				return nil, err
-			}
-
-			break
-		}
-	}
-
-	if pluginFile == "" {
-		err := fmt.Errorf("cannot find .so file in zip file: %s", name)
+	fmt.Println("Building plugin...")
+	cmd := exec.Command("make")
+	cmd.Dir = rootPath
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
 		return nil, err
 	}
 
+	fmt.Println("Loading plugin...")
+	pluginFile := path.Join(rootPath, "generator.so")
 	return plugin.Open(pluginFile)
 }
 
@@ -103,4 +83,55 @@ func (l *Loader) Clear() error {
 	}
 
 	return nil
+}
+
+func (l *Loader) Decompress(zipFile, outputPath string) (rootPath string, err error) {
+	reader, err := zip.OpenReader(zipFile)
+	if err != nil {
+		return
+	}
+	defer reader.Close()
+
+	for _, file := range reader.File {
+		filename := path.Join(outputPath, file.Name)
+		if file.FileInfo().Name() == "Makefile" && !file.FileInfo().IsDir() && rootPath == "" {
+			rootPath = path.Dir(filename)
+		}
+
+		if file.FileInfo().IsDir() {
+			err = os.MkdirAll(filename, 0755)
+			if err != nil {
+				return rootPath, err
+			}
+			continue
+		} else {
+			err = os.MkdirAll(path.Dir(filename), 0755)
+			if err != nil {
+				return rootPath, err
+			}
+		}
+
+		w, err := os.Create(filename)
+		if err != nil {
+			return rootPath, err
+		}
+		rc, err := file.Open()
+		if err != nil {
+			w.Close()
+			return rootPath, err
+		}
+		_, err = io.Copy(w, rc)
+		if err != nil {
+			w.Close()
+			rc.Close()
+			return rootPath, err
+		}
+		w.Close()
+		rc.Close()
+	}
+
+	if rootPath == "" {
+		err = fmt.Errorf("cannot find Makefile in plugins")
+	}
+	return
 }
