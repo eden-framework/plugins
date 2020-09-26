@@ -133,5 +133,12 @@ func (l *Loader) Decompress(zipFile, outputPath string) (rootPath string, err er
 	if rootPath == "" {
 		err = fmt.Errorf("cannot find Makefile in plugins")
 	}
+
+	root, err := os.Open(rootPath)
+	if err != nil {
+		err = fmt.Errorf("open rootPath %s failed", rootPath)
+		return
+	}
+	l.fileList = append(l.fileList, root)
 	return
 }
