@@ -76,7 +76,7 @@ func (l *Loader) Clear() error {
 
 	for _, f := range l.fileList {
 		fmt.Printf("Removing file: %s ...\n", f.Name())
-		err := os.Remove(f.Name())
+		err := os.RemoveAll(f.Name())
 		if err != nil {
 			return err
 		}
